@@ -1,0 +1,177 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to create release for'
+        required: false
+        default: ''
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: augment-vip-jetbrains
+            asset_name: augment-vip-jetbrains-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: augment-vip-jetbrains.exe
+            asset_name: augment-vip-jetbrains-windows-x86_64.exe
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            artifact_name: augment-vip-jetbrains.exe
+            asset_name: augment-vip-jetbrains-windows-aarch64.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: augment-vip-jetbrains
+            asset_name: augment-vip-jetbrains-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: augment-vip-jetbrains
+            asset_name: augment-vip-jetbrains-macos-aarch64
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Build release binary
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - name: Strip binary (Linux and macOS)
+      if: matrix.os != 'windows-latest'
+      run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.asset_name }}
+        path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Prepare release assets
+      run: |
+        mkdir -p release-assets
+
+        # Linux x86_64
+        cp artifacts/augment-vip-jetbrains-linux-x86_64/augment-vip-jetbrains release-assets/augment-vip-jetbrains-linux-x86_64
+        chmod +x release-assets/augment-vip-jetbrains-linux-x86_64
+
+        # Windows x86_64
+        cp artifacts/augment-vip-jetbrains-windows-x86_64.exe/augment-vip-jetbrains.exe release-assets/augment-vip-jetbrains-windows-x86_64.exe
+
+        # Windows ARM64
+        cp artifacts/augment-vip-jetbrains-windows-aarch64.exe/augment-vip-jetbrains.exe release-assets/augment-vip-jetbrains-windows-aarch64.exe
+
+        # macOS x86_64
+        cp artifacts/augment-vip-jetbrains-macos-x86_64/augment-vip-jetbrains release-assets/augment-vip-jetbrains-macos-x86_64
+        chmod +x release-assets/augment-vip-jetbrains-macos-x86_64
+
+        # macOS ARM64
+        cp artifacts/augment-vip-jetbrains-macos-aarch64/augment-vip-jetbrains release-assets/augment-vip-jetbrains-macos-aarch64
+        chmod +x release-assets/augment-vip-jetbrains-macos-aarch64
+
+    - name: Get release info
+      id: release_info
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag }}" ]; then
+          echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          echo "name=Release ${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+        else
+          # Use commit SHA for automatic releases
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+          TAG="build-${TIMESTAMP}-${SHORT_SHA}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "name=Build ${TIMESTAMP} (${SHORT_SHA})" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create Release
+      id: create_release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Create release notes
+        cat > release_notes.md << 'EOF'
+        ## Commit Information
+
+        - **Commit**: ${{ github.sha }}
+        - **Author**: ${{ github.actor }}
+        - **Branch**: ${{ github.ref_name }}
+        - **Message**: ${{ github.event.head_commit.message }}
+
+        ## Downloads
+
+        - **Linux (x86_64)**: `augment-vip-jetbrains-linux-x86_64`
+        - **Windows (x86_64)**: `augment-vip-jetbrains-windows-x86_64.exe`
+        - **Windows (ARM64)**: `augment-vip-jetbrains-windows-aarch64.exe`
+        - **macOS (Intel)**: `augment-vip-jetbrains-macos-x86_64`
+        - **macOS (Apple Silicon)**: `augment-vip-jetbrains-macos-aarch64`
+
+        ## Installation
+
+        1. Download the appropriate binary for your platform
+        2. Make it executable (Linux/macOS): `chmod +x <binary-name>`
+        3. Run the binary: `./<binary-name>` (Linux/macOS) or `<binary-name>.exe` (Windows)
+        EOF
+
+        # Create the release
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag }}" ]; then
+          # Manual release (not prerelease)
+          gh release create "${{ steps.release_info.outputs.tag }}" \
+            --title "${{ steps.release_info.outputs.name }}" \
+            --notes-file release_notes.md \
+            release-assets/*
+        else
+          # Automatic release (prerelease)
+          gh release create "${{ steps.release_info.outputs.tag }}" \
+            --title "${{ steps.release_info.outputs.name }}" \
+            --notes-file release_notes.md \
+            --prerelease \
+            release-assets/*
+        fi
+
+

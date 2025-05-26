@@ -1,0 +1,1 @@
+Just run the binary from the release page 😊
