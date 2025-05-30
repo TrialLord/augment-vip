@@ -22,14 +22,19 @@ fn get_jetbrains_config_dir() -> Option<PathBuf> {
 }
 
 fn get_vscode_config_dirs() -> Option<Vec<PathBuf>> {
-    dirs::config_dir()
-        .map(|config_dir| {
-            ["Code", "Code - Insiders", "Cursor", "Windsurf"]
-                .iter()
-                .map(|variant| config_dir.join(variant).join("User").join("globalStorage"))
-                .filter(|path| path.exists())
-                .collect()
-        })
+    let config_dir = dirs::config_dir()?;
+
+    // Read all entries in the config directory
+    let entries = fs::read_dir(&config_dir).ok()?;
+
+    let vscode_dirs: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+        .map(|entry| entry.path().join("User").join("globalStorage"))
+        .filter(|path| path.exists())
+        .collect();
+
+    (!vscode_dirs.is_empty()).then_some(vscode_dirs)
 }
 
 fn update_jetbrains_id_file(file_path: &Path) -> Result<()> {
@@ -61,6 +66,11 @@ fn update_jetbrains_id_file(file_path: &Path) -> Result<()> {
 
 fn update_vscode_storage(vscode_global_storage_path: &Path, vscode_keys: &[&str; 3]) -> Result<()> {
     let storage_json_path = vscode_global_storage_path.join("storage.json");
+    
+    if !storage_json_path.exists() {
+        return Ok(()); // Continue if storage.json doesn't exist for this variant
+    }
+    
     println!("Updating VSCode storage: {}", storage_json_path.display());
 
     // Read existing storage.json or create empty object

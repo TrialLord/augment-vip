@@ -8,7 +8,4 @@ After that you should create a new account and log onto that new account 😊
 
 **Supported IDEs:**
 - All JetBrains IDEs
-- VSCode
-- VSCode Insiders
-- Cursor
-- Windsurf
+- All VSCode-based IDEs
