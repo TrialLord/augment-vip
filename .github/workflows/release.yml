@@ -27,24 +27,24 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: augment-vip-jetbrains
-            asset_name: augment-vip-jetbrains-linux-x86_64
+            artifact_name: augment-vip
+            asset_name: augment-vip-linux-x86_64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: augment-vip-jetbrains.exe
-            asset_name: augment-vip-jetbrains-windows-x86_64.exe
+            artifact_name: augment-vip.exe
+            asset_name: augment-vip-windows-x86_64.exe
           - os: windows-latest
             target: aarch64-pc-windows-msvc
-            artifact_name: augment-vip-jetbrains.exe
-            asset_name: augment-vip-jetbrains-windows-aarch64.exe
+            artifact_name: augment-vip.exe
+            asset_name: augment-vip-windows-aarch64.exe
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: augment-vip-jetbrains
-            asset_name: augment-vip-jetbrains-macos-x86_64
+            artifact_name: augment-vip
+            asset_name: augment-vip-macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: augment-vip-jetbrains
-            asset_name: augment-vip-jetbrains-macos-aarch64
+            artifact_name: augment-vip
+            asset_name: augment-vip-macos-aarch64
 
     steps:
     - name: Checkout code
@@ -99,22 +99,22 @@ jobs:
         mkdir -p release-assets
 
         # Linux x86_64
-        cp artifacts/augment-vip-jetbrains-linux-x86_64/augment-vip-jetbrains release-assets/augment-vip-jetbrains-linux-x86_64
-        chmod +x release-assets/augment-vip-jetbrains-linux-x86_64
+        cp artifacts/augment-vip-linux-x86_64/augment-vip release-assets/augment-vip-linux-x86_64
+        chmod +x release-assets/augment-vip-linux-x86_64
 
         # Windows x86_64
-        cp artifacts/augment-vip-jetbrains-windows-x86_64.exe/augment-vip-jetbrains.exe release-assets/augment-vip-jetbrains-windows-x86_64.exe
+        cp artifacts/augment-vip-windows-x86_64.exe/augment-vip.exe release-assets/augment-vip-windows-x86_64.exe
 
         # Windows ARM64
-        cp artifacts/augment-vip-jetbrains-windows-aarch64.exe/augment-vip-jetbrains.exe release-assets/augment-vip-jetbrains-windows-aarch64.exe
+        cp artifacts/augment-vip-windows-aarch64.exe/augment-vip.exe release-assets/augment-vip-windows-aarch64.exe
 
         # macOS x86_64
-        cp artifacts/augment-vip-jetbrains-macos-x86_64/augment-vip-jetbrains release-assets/augment-vip-jetbrains-macos-x86_64
-        chmod +x release-assets/augment-vip-jetbrains-macos-x86_64
+        cp artifacts/augment-vip-macos-x86_64/augment-vip release-assets/augment-vip-macos-x86_64
+        chmod +x release-assets/augment-vip-macos-x86_64
 
         # macOS ARM64
-        cp artifacts/augment-vip-jetbrains-macos-aarch64/augment-vip-jetbrains release-assets/augment-vip-jetbrains-macos-aarch64
-        chmod +x release-assets/augment-vip-jetbrains-macos-aarch64
+        cp artifacts/augment-vip-macos-aarch64/augment-vip release-assets/augment-vip-macos-aarch64
+        chmod +x release-assets/augment-vip-macos-aarch64
 
     - name: Get release info
       id: release_info
@@ -147,11 +147,11 @@ jobs:
 
         ## Downloads
 
-        - **Linux (x86_64)**: `augment-vip-jetbrains-linux-x86_64`
-        - **Windows (x86_64)**: `augment-vip-jetbrains-windows-x86_64.exe`
-        - **Windows (ARM64)**: `augment-vip-jetbrains-windows-aarch64.exe`
-        - **macOS (Intel)**: `augment-vip-jetbrains-macos-x86_64`
-        - **macOS (Apple Silicon)**: `augment-vip-jetbrains-macos-aarch64`
+        - **Linux (x86_64)**: `augment-vip-linux-x86_64`
+        - **Windows (x86_64)**: `augment-vip-windows-x86_64.exe`
+        - **Windows (ARM64)**: `augment-vip-windows-aarch64.exe`
+        - **macOS (Intel)**: `augment-vip-macos-x86_64`
+        - **macOS (Apple Silicon)**: `augment-vip-macos-aarch64`
 
         ## Installation
 
