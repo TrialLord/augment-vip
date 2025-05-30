@@ -1,9 +1,11 @@
 use base64::{Engine as _, engine::general_purpose};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use rusqlite::Connection;
+use serde_json::{Map, Value};
+use std::fs::{self};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use uuid::Uuid;
+use sha2::{Sha256, Digest};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -15,52 +17,23 @@ fn main() {
 }
 
 fn get_jetbrains_config_dir() -> Option<PathBuf> {
-    // Try standard platform directories first
-    let standard_path = dirs::config_dir()?.join("JetBrains");
-
-    if standard_path.exists() {
-        return Some(standard_path);
-    }
-
-    // // Try fallback paths
-    // let fallback_paths = match () {
-    //     _ if cfg!(windows) => &[
-    //         r"C:\Users\%USERNAME%\AppData\Roaming\JetBrains",
-    //         r"C:\Users\%USERNAME%\.jetbrains",
-    //     ],
-    //     _ if cfg!(target_os = "macos") => &[
-    //         "~/Library/Application Support/JetBrains",
-    //         "~/.jetbrains",
-    //     ],
-    //     _ => &[
-    //         "~/.config/JetBrains",
-    //         "~/.jetbrains",
-    //     ],
-    // };
-    //
-    // fallback_paths
-    //     .iter()
-    //     .filter_map(|&path_str| {
-    //         let expanded = if cfg!(windows) {
-    //             let username = std::env::var("USERNAME").ok()?;
-    //             path_str.replace("%USERNAME%", &username)
-    //         } else {
-    //             path_str.to_string()
-    //         };
-    //
-    //         shellexpand::full(&expanded)
-    //             .ok()
-    //             .map(|cow| PathBuf::from(cow.as_ref()))
-    //     })
-    //     .find(|path| path.exists())
-    None
+    let path = dirs::config_dir()?.join("JetBrains");
+    path.exists().then_some(path)
 }
 
-fn update_id_file(file_path: &Path) -> Result<()> {
-    println!("Updating file: {}", file_path.display());
+fn get_vscode_config_dirs() -> Option<Vec<PathBuf>> {
+    dirs::config_dir()
+        .map(|config_dir| {
+            ["Code", "Code - Insiders", "Cursor", "Windsurf"]
+                .iter()
+                .map(|variant| config_dir.join(variant).join("User").join("globalStorage"))
+                .filter(|path| path.exists())
+                .collect()
+        })
+}
 
-    let new_uuid = Uuid::new_v4().to_string();
-    println!("New UUID: {}", new_uuid);
+fn update_jetbrains_id_file(file_path: &Path) -> Result<()> {
+    println!("Updating file: {}", file_path.display());
 
     // Show old UUID if it exists
     if file_path.exists() {
@@ -70,12 +43,9 @@ fn update_id_file(file_path: &Path) -> Result<()> {
         }
     }
 
-    // Ensure parent directory exists
-    if let Some(parent) = file_path.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)?;
-        }
-    }
+    // Show new UUID
+    let new_uuid = Uuid::new_v4().to_string();
+    println!("New UUID: {}", new_uuid);
 
     // Delete the file if it exists
     if file_path.exists() {
@@ -83,32 +53,92 @@ fn update_id_file(file_path: &Path) -> Result<()> {
     }
 
     // Write new UUID to file
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(file_path)?;
+    fs::write(file_path, new_uuid)?;
 
-    file.write_all(new_uuid.as_bytes())?;
     println!("Successfully wrote new UUID to file");
     Ok(())
 }
 
-fn run() -> Result<()> {
-    let jetbrains_dir = get_jetbrains_config_dir()
-        .ok_or("Failed to find JetBrains configuration directory")?;
+fn update_vscode_storage(vscode_global_storage_path: &Path, vscode_keys: &[&str; 3]) -> Result<()> {
+    let storage_json_path = vscode_global_storage_path.join("storage.json");
+    println!("Updating VSCode storage: {}", storage_json_path.display());
 
-    println!("JetBrains config directory: {}", jetbrains_dir.display());
+    // Read existing storage.json or create empty object
+    let mut data: Map<String, Value> = storage_json_path.exists()
+        .then(|| fs::read_to_string(&storage_json_path).ok())
+        .flatten()
+        .and_then(|content| serde_json::from_str(&content).ok())
+        .unwrap_or_else(Map::new);
 
-    let id_files = ["UGVybWFuZW50RGV2aWNlSWQ=", "UGVybWFuZW50VXNlcklk"];
+    for key_encoded in vscode_keys {
+        let key = String::from_utf8(general_purpose::STANDARD.decode(key_encoded)?)?;
 
-    for file_name in &id_files {
-        let file_path = jetbrains_dir.join(String::from_utf8(general_purpose::STANDARD.decode(file_name)?)?);
-        update_id_file(&file_path)?;
-        lock_file(&file_path)?;
+        // Show old value if it exists
+        if let Some(old_value) = data.get(&key) {
+            println!("Old UUID: {}", old_value.as_str().unwrap_or_default());
+        }
+
+        // Generate and update new value
+        let new_value = if *key_encoded == "dGVsZW1ldHJ5LmRldkRldmljZUlk" {
+            Uuid::new_v4().to_string() // ... (something something look into something something) ...
+        } else {
+            format!("{:x}", Sha256::digest(Uuid::new_v4().as_bytes())) // Some fields are SHA-256 hashes
+        };
+        println!("New UUID: {}", new_value);
+        data.insert(key, Value::String(new_value));
     }
 
-    println!("ID files have been updated and locked successfully!");
+    // Write back to file
+    let json_content = serde_json::to_string_pretty(&data)?;
+    fs::write(&storage_json_path, json_content)?;
+
+    println!("Successfully wrote new UUIDs to file");
+    Ok(())
+}
+
+fn run() -> Result<()> {
+    let mut programs_found = false;
+
+    // Try to find and update JetBrains
+    if let Some(jetbrains_dir) = get_jetbrains_config_dir() {
+        programs_found = true;
+
+        let id_files = ["UGVybWFuZW50RGV2aWNlSWQ=", "UGVybWFuZW50VXNlcklk"];
+
+        for file_name in &id_files {
+            let file_path = jetbrains_dir.join(String::from_utf8(general_purpose::STANDARD.decode(file_name)?)?);
+            update_jetbrains_id_file(&file_path)?;
+            lock_file(&file_path)?;
+        }
+
+        println!("JetBrains ID files have been updated and locked successfully!");
+    } else {
+        println!("JetBrains configuration directory not found");
+    }
+
+    // Try to find and update VSCode variants
+    if let Some(vscode_dirs) = get_vscode_config_dirs() {
+        programs_found = true;
+
+        let vscode_keys = ["dGVsZW1ldHJ5Lm1hY2hpbmVJZA==", "dGVsZW1ldHJ5LmRldkRldmljZUlk", "dGVsZW1ldHJ5Lm1hY01hY2hpbmVJZA=="];
+        let count_query = String::from_utf8(general_purpose::STANDARD.decode("U0VMRUNUIENPVU5UKCopIEZST00gSXRlbVRhYmxlIFdIRVJFIGtleSBMSUtFICclYXVnbWVudCUnOw==")?)?;
+        let delete_query = String::from_utf8(general_purpose::STANDARD.decode("REVMRVRFIEZST00gSXRlbVRhYmxlIFdIRVJFIGtleSBMSUtFICclYXVnbWVudCUnOw==")?)?;
+
+        for vscode_dir in vscode_dirs {
+            update_vscode_storage(&vscode_dir, &vscode_keys)?;
+            clean_database(&vscode_dir, &count_query, &delete_query)?;
+        }
+
+        println!("All found VSCode variants' ID files have been updated and databases cleaned successfully!");
+    } else {
+        println!("No VSCode variants found");
+    }
+
+    // Error only if no programs were found at all
+    if !programs_found {
+        return Err("No JetBrains or VSCode installations found".into());
+    }
+    
     Ok(())
 }
 
@@ -136,5 +166,35 @@ fn lock_file(file_path: &Path) -> Result<()> {
     fs::set_permissions(file_path, perms)?;
 
     println!("Successfully locked file");
+    Ok(())
+}
+
+fn clean_database(vscode_global_storage_path: &Path, count_query: &String, delete_query: &String) -> Result<()> {
+    let state_db_path = vscode_global_storage_path.join("state.vscdb");
+
+    if !state_db_path.exists() {
+        println!("State database not found: {}", state_db_path.display());
+        return Ok(());
+    }
+
+    println!("Cleaning state database: {}", state_db_path.display());
+
+    let conn = Connection::open(&state_db_path)?;
+
+    // Check how many rows would be deleted first
+    let mut stmt = conn.prepare(count_query)?;
+    let rows_to_delete: i64 = stmt.query_row([], |row| row.get(0))?;
+
+    if rows_to_delete > 0 {
+        println!("Found {} potential entries to remove from '{}'", rows_to_delete, state_db_path.file_name().unwrap_or_default().to_string_lossy());
+
+        // Execute the delete query
+        conn.execute(delete_query, [])?;
+
+        println!("Successfully removed {} entries from '{}'", rows_to_delete, state_db_path.file_name().unwrap_or_default().to_string_lossy());
+    } else {
+        println!("No entries found to remove from '{}'", state_db_path.file_name().unwrap_or_default().to_string_lossy());
+    }
+
     Ok(())
 }
