@@ -17,20 +17,34 @@ fn main() {
 }
 
 fn get_jetbrains_config_dir() -> Option<PathBuf> {
-    let path = dirs::config_dir()?.join("JetBrains");
-    path.exists().then_some(path)
+    [dirs::config_dir(), dirs::home_dir()]
+        .into_iter()
+        .filter_map(|base_dir| base_dir)
+        .map(|base_dir| base_dir.join("JetBrains"))
+        .find(|path| path.exists())
 }
 
 fn get_vscode_config_dirs() -> Option<Vec<PathBuf>> {
-    let config_dir = dirs::config_dir()?;
+    let base_dirs = [dirs::config_dir(), dirs::home_dir()];
+    let path_patterns = [
+        &["User", "globalStorage"] as &[&str],
+        &["data", "User", "globalStorage"],
+    ];
 
-    // Read all entries in the config directory
-    let entries = fs::read_dir(&config_dir).ok()?;
-
-    let vscode_dirs: Vec<PathBuf> = entries
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
-        .map(|entry| entry.path().join("User").join("globalStorage"))
+    let vscode_dirs: Vec<PathBuf> = base_dirs
+        .into_iter()
+        .filter_map(|base_dir| base_dir)
+        .flat_map(|base_dir| {
+            fs::read_dir(&base_dir)
+                .into_iter()
+                .flat_map(|entries| entries.filter_map(|entry| entry.ok()))
+                .filter(|entry| entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+                .flat_map(|entry| {
+                    path_patterns.iter().map(move |pattern| {
+                        pattern.iter().fold(entry.path(), |path, segment| path.join(segment))
+                    })
+                })
+        })
         .filter(|path| path.exists())
         .collect();
 
