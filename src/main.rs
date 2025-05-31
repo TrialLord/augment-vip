@@ -17,7 +17,7 @@ fn main() {
 }
 
 fn get_jetbrains_config_dir() -> Option<PathBuf> {
-    [dirs::config_dir(), dirs::home_dir()]
+    [dirs::config_dir(), dirs::home_dir(), dirs::data_dir()]
         .into_iter()
         .filter_map(|base_dir| base_dir)
         .map(|base_dir| base_dir.join("JetBrains"))
@@ -25,7 +25,7 @@ fn get_jetbrains_config_dir() -> Option<PathBuf> {
 }
 
 fn get_vscode_config_dirs() -> Option<Vec<PathBuf>> {
-    let base_dirs = [dirs::config_dir(), dirs::home_dir()];
+    let base_dirs = [dirs::config_dir(), dirs::home_dir(), dirs::data_dir()];
     let path_patterns = [
         &["User", "globalStorage"] as &[&str],
         &["data", "User", "globalStorage"],
