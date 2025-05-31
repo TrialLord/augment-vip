@@ -9,3 +9,15 @@ After that you should create a new account and log onto that new account 😊
 **Supported IDEs:**
 - All JetBrains IDEs
 - All VSCode-based IDEs
+
+## Mac OS Compatibility
+
+- The program now includes improved support for macOS, including proper file locking using both Unix permissions and the `chflags uchg` command to make files immutable on macOS systems.
+- All file path handling and permission changes are now cross-platform.
+- You can test Mac OS compatibility automatically using GitHub Actions (see the Actions tab in your forked repository).
+
+## How to Test on Mac OS (without a Mac)
+
+- This project uses GitHub Actions to build and test on macOS runners.
+- To test, push your changes to your fork and trigger the workflow from the Actions tab on GitHub.
+- The workflow will build the project for both Intel and Apple Silicon Macs and report any issues.
