@@ -179,6 +179,7 @@ fn lock_file(file_path: &Path) -> Result<()> {
             .args(["+R", &file_path.to_string_lossy()])
             .output()
     } else {
+        // For Unix-like systems (Linux and macOS)
         Command::new("chmod")
             .args(["444", &file_path.to_string_lossy()])
             .output()
@@ -188,6 +189,14 @@ fn lock_file(file_path: &Path) -> Result<()> {
     let mut perms = fs::metadata(file_path)?.permissions();
     perms.set_readonly(true);
     fs::set_permissions(file_path, perms)?;
+
+    // Additional check for macOS to ensure permissions are properly set
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("chflags")
+            .args(["uchg", &file_path.to_string_lossy()])
+            .output();
+    }
 
     println!("Successfully locked file");
     Ok(())
